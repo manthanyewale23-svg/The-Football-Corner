@@ -7,7 +7,7 @@ import {
   onAuthStateChanged,
   updateProfile,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { auth, db, googleProvider } from '../services/firebase.js';
 
 const AuthContext = createContext(null);
@@ -32,6 +32,15 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
+  async function checkUsernameUnique(testUsername) {
+    if (!testUsername) return false;
+    // Query users collection to see if this username exists (case-sensitive exact match)
+    // For a stricter app, you might maintain a separate lowercase 'usernames' collection
+    const q = query(collection(db, 'users'), where('username', '==', testUsername));
+    const snap = await getDocs(q);
+    return snap.empty; // true if unique, false if already taken
+  }
+
   async function loadUserData(uid) {
     try {
       const docRef = doc(db, 'users', uid);
@@ -40,7 +49,6 @@ export function AuthProvider({ children }) {
         setUserData(docSnap.data());
       }
     } catch {
-      // Use demo mode if Firebase isn't configured
       setUserData(getDemoUserData());
     }
   }
@@ -49,9 +57,19 @@ export function AuthProvider({ children }) {
     const docRef = doc(db, 'users', firebaseUser.uid);
     const docSnap = await getDoc(docRef);
     if (!docSnap.exists()) {
+
+      let finalUsername = extra.username;
+
+      // If we somehow get here without a username (e.g. Google login with no extra data), 
+      // generate a random unique one so it doesn't default to "Football Fan" for everyone
+      if (!finalUsername) {
+        const base = (firebaseUser.displayName || 'User').replace(/\s+/g, '');
+        finalUsername = `${base}${Math.floor(Math.random() * 90000) + 10000}`;
+      }
+
       const newUser = {
         uid: firebaseUser.uid,
-        username: extra.username || firebaseUser.displayName || 'Football Fan',
+        username: finalUsername,
         email: firebaseUser.email,
         photoURL: firebaseUser.photoURL || '',
         iqScore: 100,
@@ -65,17 +83,18 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function loginWithGoogle() {
+  async function loginWithGoogle(desiredUsername = null) {
     try {
       setError(null);
       const result = await signInWithPopup(auth, googleProvider);
-      await createUserDocument(result.user);
+
+      // Only create the doc if it's a new user, and pass along the desiredUsername
+      await createUserDocument(result.user, { username: desiredUsername });
     } catch (e) {
       setError(e.message);
       throw e;
     }
   }
-
 
   async function loginWithEmail(email, password) {
     try {
@@ -90,6 +109,14 @@ export function AuthProvider({ children }) {
   async function signupWithEmail(email, password, username) {
     try {
       setError(null);
+
+      // 1. Strictly enforce uniqueness before doing anything
+      const isUnique = await checkUsernameUnique(username);
+      if (!isUnique) {
+        throw new Error("Username is already taken. Please choose another one.");
+      }
+
+      // 2. Create the account
       const result = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(result.user, { displayName: username });
       await createUserDocument(result.user, { username });
