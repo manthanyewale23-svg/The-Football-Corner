@@ -16,7 +16,7 @@ export default function AuthPage() {
     setErr('');
     setLoading(true);
     try {
-      await loginWithGoogle();
+      await loginWithGoogle(mode === 'signup' ? username : null);
       navigate('/');
     } catch (e) {
       setErr(e.message || 'Authentication failed. Make sure Firebase is configured.');
