@@ -91,19 +91,21 @@ export default function FriendsPage() {
       }
       setLoading(true);
       try {
-        // Query users collection for matching display names
-        // Note: Full text search in Firestore is limited, this does exact prefix matching
-        const q = query(
-          collection(db, 'users'),
-          where('username', '>=', search),
-          where('username', '<=', search + '\uf8ff')
-        );
-        const snap = await getDocs(q);
+        // Fetch users and filter client-side for case-insensitive and partial matching
+        // (Suitable for smaller apps, solves the strict case-sensitivity of Firestore)
+        const snap = await getDocs(collection(db, 'users'));
         const results = [];
+        const searchLower = search.toLowerCase();
+
         snap.forEach(doc => {
           const data = doc.data();
-          // Filter out myself and people who are already friends
-          if (data.uid !== myUid && !friends.includes(data.uid)) {
+          // Filter out myself, existing friends, and check for a substring match
+          if (
+            data.uid !== myUid &&
+            !friends.includes(data.uid) &&
+            data.username &&
+            data.username.toLowerCase().includes(searchLower)
+          ) {
             results.push(data);
           }
         });
