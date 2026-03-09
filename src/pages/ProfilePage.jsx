@@ -3,8 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
 import { getIQLevel } from '../utils/iqLogic.js';
-import { storage } from '../services/firebase.js';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export default function ProfilePage() {
   const { user, userData, logout, updateUserData } = useAuth();
@@ -40,6 +38,7 @@ export default function ProfilePage() {
     navigate('/auth', { replace: true });
   }
 
+  // Compress image using canvas and save as base64 in Firestore (no paid storage needed)
   async function handlePhotoChange(e) {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -49,16 +48,34 @@ export default function ProfilePage() {
     }
     setUploadingPhoto(true);
     try {
-      const storageRef = ref(storage, `profile_photos/${user.uid}`);
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-      await updateUserData({ photoURL: downloadURL });
+      const base64 = await compressImage(file, 150);
+      await updateUserData({ photoURL: base64 });
     } catch (err) {
       console.error('Photo upload failed:', err);
       alert('Photo upload failed. Please try again.');
     } finally {
       setUploadingPhoto(false);
     }
+  }
+
+  // Resize image to maxSize x maxSize and return base64 JPEG string
+  function compressImage(file, maxSize) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(maxSize / img.width, maxSize / img.height);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
   }
 
   const isDark = theme === 'dark';
