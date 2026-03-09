@@ -231,9 +231,13 @@ export default function FriendsPage() {
             {friendProfiles.map(u => (
               <div key={u.uid} className="friend-row" id={`friend-${u.uid}`}>
                 <div style={{ position: 'relative', flexShrink: 0 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,var(--green),var(--teal))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, color: '#000' }}>
-                    {(u.username || 'U').slice(0, 2).toUpperCase()}
-                  </div>
+                  {u.photoURL ? (
+                    <img src={u.photoURL} alt={u.username} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--green)' }} />
+                  ) : (
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,var(--green),var(--teal))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, color: '#000' }}>
+                      {(u.username || 'U').slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{u.username || 'User'}</div>

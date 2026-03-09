@@ -90,6 +90,7 @@ export default function ChatPage() {
 
   const username = friendData?.username || 'Loading...';
   const initials = username.slice(0, 2).toUpperCase();
+  const photoURL = friendData?.photoURL;
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100dvh' }}>
@@ -98,7 +99,15 @@ export default function ChatPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Link to="/friends" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: 20 }}>←</Link>
           <div style={{ position: 'relative' }}>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,var(--green),var(--teal))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, color: '#000' }}>
+            {photoURL ? (
+              <img
+                src={photoURL}
+                alt={username}
+                style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--green)' }}
+                onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+              />
+            ) : null}
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,var(--green),var(--teal))', display: photoURL ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, color: '#000' }}>
               {initials}
             </div>
           </div>
