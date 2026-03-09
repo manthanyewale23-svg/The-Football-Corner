@@ -49,7 +49,7 @@ export function AuthProvider({ children }) {
         setUserData(docSnap.data());
       }
     } catch {
-      setUserData(getDemoUserData());
+      setUserData(null);
     }
   }
 
@@ -57,19 +57,9 @@ export function AuthProvider({ children }) {
     const docRef = doc(db, 'users', firebaseUser.uid);
     const docSnap = await getDoc(docRef);
     if (!docSnap.exists()) {
-
-      let finalUsername = extra.username;
-
-      // If we somehow get here without a username (e.g. Google login with no extra data), 
-      // generate a random unique one so it doesn't default to "Football Fan" for everyone
-      if (!finalUsername) {
-        const base = (firebaseUser.displayName || 'User').replace(/\s+/g, '');
-        finalUsername = `${base}${Math.floor(Math.random() * 90000) + 10000}`;
-      }
-
       const newUser = {
         uid: firebaseUser.uid,
-        username: finalUsername,
+        username: extra.username || '',
         email: firebaseUser.email,
         photoURL: firebaseUser.photoURL || '',
         iqScore: 100,
@@ -83,17 +73,32 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function loginWithGoogle(desiredUsername = null) {
+  async function loginWithGoogle() {
     try {
       setError(null);
       const result = await signInWithPopup(auth, googleProvider);
-
-      // Only create the doc if it's a new user, and pass along the desiredUsername
-      await createUserDocument(result.user, { username: desiredUsername });
+      await createUserDocument(result.user);
     } catch (e) {
       setError(e.message);
       throw e;
     }
+  }
+
+  async function completeOnboarding(chosenUsername) {
+    if (!user) throw new Error("No authenticated user");
+
+    // Check if unique
+    const isUnique = await checkUsernameUnique(chosenUsername);
+    if (!isUnique) {
+      throw new Error("Username is already taken. Please choose another one.");
+    }
+
+    // Attach to document
+    const docRef = doc(db, 'users', user.uid);
+    await setDoc(docRef, { username: chosenUsername }, { merge: true });
+
+    // Update local state
+    setUserData(prev => ({ ...prev, username: chosenUsername }));
   }
 
   async function loginWithEmail(email, password) {
@@ -131,49 +136,28 @@ export function AuthProvider({ children }) {
     setUserData(null);
   }
 
-  // Demo mode: update local state without Firebase
+  // update local state
   async function updateUserData(updates) {
     if (user) {
       try {
         const docRef = doc(db, 'users', user.uid);
         await setDoc(docRef, updates, { merge: true });
       } catch {
-        // silently ignore in demo mode
+        // ignore
       }
     }
     setUserData(prev => ({ ...prev, ...updates }));
   }
 
-  // Demo user for testing without Firebase
-  function useDemoLogin() {
-    const demoUser = { uid: 'demo123', email: 'demo@footballiq.app', displayName: 'Demo Player' };
-    setUser(demoUser);
-    setUserData(getDemoUserData());
-  }
-
   return (
     <AuthContext.Provider value={{
       user, userData, loading, error,
-      loginWithGoogle, loginWithEmail,
-      signupWithEmail, logout, updateUserData, useDemoLogin
+      loginWithGoogle, loginWithEmail, completeOnboarding,
+      signupWithEmail, logout, updateUserData
     }}>
       {children}
     </AuthContext.Provider>
   );
-}
-
-function getDemoUserData() {
-  return {
-    uid: 'demo123',
-    username: 'Football Fan',
-    email: 'demo@footballiq.app',
-    photoURL: '',
-    iqScore: 245,
-    fdpResult: null,
-    predictionCount: 3,
-    correctPredictions: 2,
-    predictions: [],
-  };
 }
 
 export function useAuth() {

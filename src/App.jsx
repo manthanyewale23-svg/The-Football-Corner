@@ -19,10 +19,12 @@ import CommunityPage from './pages/CommunityPage.jsx';
 import FriendsPage from './pages/FriendsPage.jsx';
 import ChatPage from './pages/ChatPage.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
+import OnboardingPage from './pages/OnboardingPage.jsx';
 
-function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) {
+function ProtectedRoute({ children, allowNoUsername = false }) {
+  const { user, loading, userData } = useAuth();
+
+  if (loading || (user && !userData)) {
     return (
       <div className="loader-wrap" style={{ minHeight: '100dvh' }}>
         <div className="loader-spinner" />
@@ -30,7 +32,16 @@ function ProtectedRoute({ children }) {
       </div>
     );
   }
-  return user ? children : <Navigate to="/auth" replace />;
+
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  if (!allowNoUsername && userData && !userData.username) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  return children;
 }
 
 function AppLayout({ children, hideNav }) {
@@ -50,6 +61,9 @@ function AppRoutes() {
     <div className="app-shell">
       <Routes>
         <Route path="/auth" element={user ? <Navigate to="/" replace /> : <AuthPage />} />
+
+        {/* Onboarding route */}
+        <Route path="/onboarding" element={<ProtectedRoute allowNoUsername><OnboardingPage /></ProtectedRoute>} />
 
         {/* Main app routes */}
         <Route path="/" element={<ProtectedRoute><AppLayout><HomePage /></AppLayout></ProtectedRoute>} />
