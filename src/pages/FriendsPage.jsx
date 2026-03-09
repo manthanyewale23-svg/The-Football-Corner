@@ -6,7 +6,7 @@ import { db } from '../services/firebase.js';
 import { collection, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, getDocs } from 'firebase/firestore';
 
 export default function FriendsPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, updateUserData } = useAuth();
   const { addNotification } = useNotifications();
   const [search, setSearch] = useState('');
 
@@ -164,6 +164,9 @@ export default function FriendsPage() {
       const myRef = doc(db, 'users', myUid);
       const myNewFriends = [...(userData.friends || []), req.senderId];
       await setDoc(myRef, { friends: myNewFriends }, { merge: true });
+
+      // Also update local AuthContext state so UI refreshes instantly
+      await updateUserData({ friends: myNewFriends });
 
       // 2. Add ME to THEIR friends list using direct doc reference (not a query)
       const theirRef = doc(db, 'users', req.senderId);
