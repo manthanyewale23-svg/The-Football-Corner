@@ -100,15 +100,20 @@ export default function FriendsPage() {
         snap.forEach(doc => {
           const data = doc.data();
           // Filter out myself, existing friends, and check for a substring match
+          const friendIds = friends || [];
+          const safeMyUid = myUid || '';
+
           if (
-            data.uid !== myUid &&
-            !friends.includes(data.uid) &&
+            data.uid !== safeMyUid &&
+            !friendIds.includes(data.uid) &&
             data.username &&
+            typeof data.username === 'string' &&
             data.username.toLowerCase().includes(searchLower)
           ) {
             results.push(data);
           }
         });
+        console.log("Found matches:", results);
         setSearchResults(results);
       } catch (err) {
         console.error("Search error:", err);
