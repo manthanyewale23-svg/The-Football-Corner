@@ -1,66 +1,95 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
-
-const MOCK_FRIENDS = {
-  u1: { username: 'TacticMaster', isOnline: true },
-  u2: { username: 'GoalGuru99', isOnline: false },
-  u3: { username: 'xGWizard', isOnline: true },
-  u4: { username: 'PitchProphet', isOnline: false },
-  u5: { username: 'FootballOracle', isOnline: true },
-};
-
-const SEED_MESSAGES = [
-  { id: 'm1', senderId: 'u3', text: 'Hey! Did you see the Clásico last night? 🔥', timestamp: new Date(Date.now() - 30 * 60000).toISOString() },
-  { id: 'm2', senderId: 'me', text: 'Yes! Mbappé was incredible. What a finish!', timestamp: new Date(Date.now() - 28 * 60000).toISOString() },
-  { id: 'm3', senderId: 'u3', text: 'Barcelona almost had it though. Yamal is something else at 17!', timestamp: new Date(Date.now() - 25 * 60000).toISOString() },
-];
+import { db } from '../services/firebase.js';
+import {
+  collection, query, orderBy, onSnapshot,
+  addDoc, serverTimestamp, doc, getDoc
+} from 'firebase/firestore';
 
 function formatTime(ts) {
-  return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (!ts) return '';
+  const date = ts.toDate ? ts.toDate() : new Date(ts);
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Create a consistent chat room ID from two UIDs (always sorted so both users get the same room)
+function getChatRoomId(uid1, uid2) {
+  return [uid1, uid2].sort().join('_');
 }
 
 export default function ChatPage() {
   const { uid: friendUid } = useParams();
   const { user } = useAuth();
-  const myUid = user?.uid || 'me';
-  const friend = MOCK_FRIENDS[friendUid] || { username: 'Unknown', isOnline: false };
+  const myUid = user?.uid;
 
-  const [messages, setMessages] = useState(SEED_MESSAGES);
+  const [friendData, setFriendData] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const bottomRef = useRef(null);
 
+  // 1. Fetch friend's real username from Firestore
+  useEffect(() => {
+    if (!friendUid) return;
+    async function loadFriend() {
+      try {
+        const snap = await getDoc(doc(db, 'users', friendUid));
+        if (snap.exists()) {
+          setFriendData(snap.data());
+        } else {
+          setFriendData({ username: 'User', isOnline: false });
+        }
+      } catch (err) {
+        console.error('Could not load friend:', err);
+        setFriendData({ username: 'User', isOnline: false });
+      }
+    }
+    loadFriend();
+  }, [friendUid]);
+
+  // 2. Listen for real messages from Firestore in real time
+  useEffect(() => {
+    if (!myUid || !friendUid) return;
+
+    const roomId = getChatRoomId(myUid, friendUid);
+    const q = query(
+      collection(db, 'chats', roomId, 'messages'),
+      orderBy('createdAt', 'asc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const msgs = [];
+      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+      setMessages(msgs);
+    });
+
+    return () => unsubscribe();
+  }, [myUid, friendUid]);
+
+  // 3. Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function send() {
-    if (!text.trim()) return;
-    const msg = {
-      id: `m${Date.now()}`,
-      senderId: myUid,
-      text: text.trim(),
-      timestamp: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, msg]);
+  // 4. Send a real message to Firestore
+  async function send() {
+    if (!text.trim() || !myUid) return;
+    const roomId = getChatRoomId(myUid, friendUid);
+    const msgText = text.trim();
     setText('');
-
-    // Simulate auto-reply after 1.5s
-    setTimeout(() => {
-      const replies = [
-        '😂 No way!', 'Totally agree!', '⚽ Football is life!',
-        'Did you predict the score?', 'I think Liverpool will win the league 🔴',
-        'Haaland is unstoppable this season!', 'Who do you think wins the UCL?',
-      ];
-      const reply = {
-        id: `m${Date.now() + 1}`,
-        senderId: friendUid,
-        text: replies[Math.floor(Math.random() * replies.length)],
-        timestamp: new Date().toISOString(),
-      };
-      setMessages(prev => [...prev, reply]);
-    }, 1500);
+    try {
+      await addDoc(collection(db, 'chats', roomId, 'messages'), {
+        senderId: myUid,
+        text: msgText,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('Failed to send message:', err);
+    }
   }
+
+  const username = friendData?.username || 'Loading...';
+  const initials = username.slice(0, 2).toUpperCase();
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100dvh' }}>
@@ -70,17 +99,12 @@ export default function ChatPage() {
           <Link to="/friends" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: 20 }}>←</Link>
           <div style={{ position: 'relative' }}>
             <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,var(--green),var(--teal))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, color: '#000' }}>
-              {friend.username.slice(0, 2).toUpperCase()}
+              {initials}
             </div>
-            {friend.isOnline && (
-              <div style={{ width: 10, height: 10, background: 'var(--green)', borderRadius: '50%', border: '2px solid var(--bg-primary)', position: 'absolute', bottom: 0, right: 0 }} />
-            )}
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>{friend.username}</div>
-            <div className="text-xs" style={{ color: friend.isOnline ? 'var(--green)' : 'var(--text-muted)' }}>
-              {friend.isOnline ? '🟢 Online' : '⚫ Offline'}
-            </div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{username}</div>
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Tap to see profile</div>
           </div>
         </div>
         <span style={{ fontSize: 20 }}>⚽</span>
@@ -89,6 +113,11 @@ export default function ChatPage() {
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 72 }}>
         <div className="chat-wrap">
+          {messages.length === 0 && (
+            <p className="text-muted text-sm" style={{ textAlign: 'center', padding: '40px 0' }}>
+              No messages yet. Say hello! 👋
+            </p>
+          )}
           {messages.map(msg => {
             const isMine = msg.senderId === myUid;
             return (
@@ -97,7 +126,7 @@ export default function ChatPage() {
                   {msg.text}
                 </div>
                 <div className="chat-time" style={{ textAlign: isMine ? 'right' : 'left' }}>
-                  {formatTime(msg.timestamp)}
+                  {formatTime(msg.createdAt)}
                 </div>
               </div>
             );
