@@ -1,14 +1,18 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
 import { getIQLevel } from '../utils/iqLogic.js';
+import { storage } from '../services/firebase.js';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export default function ProfilePage() {
-  const { user, userData, logout } = useAuth();
+  const { user, userData, logout, updateUserData } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef(null);
 
   const iq = userData?.iqScore || 100;
   const iqLevel = getIQLevel(iq);
@@ -18,6 +22,8 @@ export default function ProfilePage() {
   const predCount = userData?.predictionCount || 0;
   const correctPred = userData?.correctPredictions || 0;
   const initials = username.slice(0, 2).toUpperCase();
+  // Custom upload takes priority over Google photo
+  const photoURL = userData?.photoURL || user?.photoURL || '';
 
   const menuItems = [
     { icon: '👥', label: 'Friends', sublabel: 'Find & chat with friends', to: '/friends', color: 'var(--teal)' },
@@ -34,18 +40,65 @@ export default function ProfilePage() {
     navigate('/auth', { replace: true });
   }
 
+  async function handlePhotoChange(e) {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file.');
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const storageRef = ref(storage, `profile_photos/${user.uid}`);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+      await updateUserData({ photoURL: downloadURL });
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+      alert('Photo upload failed. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
   const isDark = theme === 'dark';
 
   return (
     <div className="fade-in">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handlePhotoChange}
+      />
+
       {/* Profile Header */}
       <div className="profile-header">
-        <div className="profile-avatar">
-          {user?.photoURL ? (
-            <img src={user.photoURL} alt={username} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-          ) : (
-            <span style={{ fontWeight: 800 }}>{initials}</span>
-          )}
+        {/* Tappable avatar */}
+        <div
+          style={{ position: 'relative', cursor: 'pointer', display: 'inline-block', marginBottom: 12 }}
+          onClick={() => !uploadingPhoto && fileInputRef.current?.click()}
+          title="Tap to change photo"
+        >
+          <div className="profile-avatar">
+            {photoURL ? (
+              <img src={photoURL} alt={username} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              <span style={{ fontWeight: 800 }}>{initials}</span>
+            )}
+          </div>
+          {/* Camera badge */}
+          <div style={{
+            position: 'absolute', bottom: 2, right: 2,
+            width: 26, height: 26, borderRadius: '50%',
+            background: 'var(--green)', border: '2px solid var(--bg-primary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 13
+          }}>
+            {uploadingPhoto ? '⏳' : '📷'}
+          </div>
         </div>
         <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 4 }}>{username}</h1>
         <p className="text-muted text-sm" style={{ marginBottom: 12 }}>{email}</p>
